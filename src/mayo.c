@@ -107,21 +107,21 @@ static void transpose_16x16_nibbles(uint64_t *M){
 
     for (size_t i = 0; i < 16; i+=2)
     {
-        uint64_t t = ((M[i] >> 4 ) ^ M[i+1]) & even_nibbles; 
+        uint64_t t = ((M[i] >> 4 ) ^ M[i+1]) & even_nibbles;
         M[i  ] ^= t << 4;
         M[i+1] ^= t;
     }
 
     for (size_t i = 0; i < 16; i+=4)
     {
-        uint64_t t0 = ((M[i  ] >> 8) ^ M[i+2]) & even_bytes; 
-        uint64_t t1 = ((M[i+1] >> 8) ^ M[i+3]) & even_bytes; 
+        uint64_t t0 = ((M[i  ] >> 8) ^ M[i+2]) & even_bytes;
+        uint64_t t1 = ((M[i+1] >> 8) ^ M[i+3]) & even_bytes;
         M[i  ] ^= (t0 << 8);
         M[i+1] ^= (t1 << 8);
         M[i+2] ^= t0;
         M[i+3] ^= t1;
     }
-    
+
     for (size_t i = 0; i < 4; i++)
     {
         uint64_t t0 = ((M[i  ] >> 16) ^ M[i+ 4]) & even_2bytes;
@@ -132,10 +132,10 @@ static void transpose_16x16_nibbles(uint64_t *M){
         M[i+ 4] ^= t0;
         M[i+12] ^= t1;
     }
-    
+
     for (size_t i = 0; i < 8; i++)
     {
-        uint64_t t = ((M[i]>>32) ^ M[i+8]) & even_half; 
+        uint64_t t = ((M[i]>>32) ^ M[i+8]) & even_half;
         M[i  ] ^= t << 32;
         M[i+8] ^= t;
     }
@@ -147,7 +147,7 @@ static void compute_A(const mayo_params_t *p, const uint64_t *_VtL, unsigned cha
     #ifndef ENABLE_PARAMS_DYNAMIC
     (void) p;
     #endif
-    
+
     const uint64_t *VtL = _VtL;
     int bits_to_shift = 0;
     int words_to_shift = 0;
@@ -205,7 +205,7 @@ static void compute_A(const mayo_params_t *p, const uint64_t *_VtL, unsigned cha
     }
 
     uint64_t low_bit_in_nibble = 0x1111111111111111;
-    
+
     for (size_t c = 0; c < A_width; c+= 16)
     {
         for (int r = PARAM_m(p); r < PARAM_m(p) + (PARAM_k(p)+1)*PARAM_k(p)/2 ; r++)
@@ -223,7 +223,7 @@ static void compute_A(const mayo_params_t *p, const uint64_t *_VtL, unsigned cha
     }
 
 #ifdef TARGET_BIG_ENDIAN
-    for (int i = 0; i < (((PARAM_o(p)*PARAM_k(p)+15)/16)*16)*MAYO_M_OVER_8; ++i) 
+    for (int i = 0; i < (((PARAM_o(p)*PARAM_k(p)+15)/16)*16)*MAYO_M_OVER_8; ++i)
         A[i] = BSWAP64(A[i]);
 #endif
 
@@ -234,7 +234,7 @@ static void compute_A(const mayo_params_t *p, const uint64_t *_VtL, unsigned cha
             for (size_t i = 0; i < 16; i++)
             {
                 decode( (unsigned char *) &A[r*A_width/16 + c + i], A_out + PARAM_A_cols(p)*(r+i) + c, MAYO_MIN(16, PARAM_A_cols(p)-1-c));
-            }   
+            }
         }
     }
 }
@@ -488,7 +488,7 @@ int mayo_keypair_compact(const mayo_params_t *p, unsigned char *cpk,
 
     // compute Upper(P3) and store in cpk
     m_upper(m_legs, P3, P3_upper, param_o);
-    
+
     memcpy(cpk + param_pk_seed_bytes, P3_upper, param_P3_bytes);
 
 
@@ -553,7 +553,7 @@ int mayo_expand_sk(const mayo_params_t *p, const unsigned char *csk,
         P[i] = BSWAP64(P[i]);
     }
 #endif
-    
+
     uint64_t *P1 = P;
     // compute L_i = (P1 + P1^t)*O + P2
     uint64_t *L = P2;
@@ -580,7 +580,6 @@ int mayo_verify(const mayo_params_t *p, const unsigned char *m,
     unsigned char t[M_MAX];
     unsigned char y[2 * M_MAX] = {0}; // extra space for reduction mod f(X)
     unsigned char s[K_MAX * N_MAX];
-    alignas (64) uint64_t pk[EPK_BYTES_MAX / 8];
     unsigned char tmp[DIGEST_BYTES_MAX + SALT_BYTES_MAX];
 
     const int param_m = PARAM_m(p);
@@ -589,23 +588,14 @@ int mayo_verify(const mayo_params_t *p, const unsigned char *m,
     const int param_o = PARAM_o(p);
     const int param_k = PARAM_k(p);
     const int param_m_bytes = PARAM_m_bytes(p);
-    const int param_P1_bytes = PARAM_P1_bytes(p);
-    const int param_P2_bytes = PARAM_P2_bytes(p);
+    const int param_pk_seed_bytes = PARAM_pk_seed_bytes(p);
+
 #ifdef TARGET_BIG_ENDIAN
     const int param_P3_bytes = PARAM_P3_bytes(p);
 #endif
     const int param_sig_bytes = PARAM_sig_bytes(p);
     const int param_digest_bytes = PARAM_digest_bytes(p);
     const int param_salt_bytes = PARAM_salt_bytes(p);
-
-    int ret = mayo_expand_pk(p, cpk, (unsigned char *)pk);
-    if (ret != MAYO_OK) {
-        return MAYO_ERR;
-    }
-
-    uint64_t *P1 = pk;
-    uint64_t *P2 = pk + (param_P1_bytes / 8);
-    uint64_t *P3 = P2 + (param_P2_bytes / 8);
 
 #ifdef TARGET_BIG_ENDIAN
     for (int i = 0; i < param_P1_bytes / 8; ++i) {
@@ -633,13 +623,12 @@ int mayo_verify(const mayo_params_t *p, const unsigned char *m,
 
     // Compute S*P*S^T
     alignas (32) uint64_t SPS[K_MAX * K_MAX * M_MAX / 16] = {0};
-
-    m_calculate_PS_SPS(P1, P2, P3, s, param_m,
+    const uint8_t* P3 = cpk + param_pk_seed_bytes;
+    m_calculate_PS_SPS_expand_on_the_fly(cpk, (uint64_t*)P3, s, param_m,
                              param_v, param_o, param_k, SPS);
 
     // combine the vectors in SPS and reduce mod f(X)
     compute_rhs(p, SPS, y, y);
-    
     if (memcmp(y, t, param_m) == 0) {
         return MAYO_OK; // good signature
     }

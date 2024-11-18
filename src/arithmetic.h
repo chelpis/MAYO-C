@@ -8,6 +8,8 @@
 #include <mayo.h>
 #include <stdint.h>
 
+#define PQM4
+
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 #define TARGET_BIG_ENDIAN
 #endif
@@ -57,6 +59,12 @@ int sample_solution(const mayo_params_t *p, unsigned char *A, const unsigned cha
 #define m_calculate_PS_SPS MAYO_NAMESPACE(m_calculate_PS_SPS)
 void m_calculate_PS_SPS(const uint64_t *P1, const uint64_t *P2, const uint64_t *P3, const unsigned char *S,
                               const int m, const int v, const int o, const int k, uint64_t *SPS);
+
+// Calculate SPS = S*P*S^T in Verify
+#define m_calculate_PS_SPS_expand_on_the_fly MAYO_NAMESPACE(m_calculate_PS_SPS_expand_on_the_fly)
+void m_calculate_PS_SPS_expand_on_the_fly(const uint8_t* seed, const uint64_t *P3, const unsigned char *S,
+                              const int m, const int v, const int o, const int k, uint64_t *SPS);
+
 
 // Convert solution x to signature s
 #define finish_signature MAYO_NAMESPACE(finish_signature)

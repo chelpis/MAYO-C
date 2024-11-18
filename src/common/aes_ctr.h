@@ -18,6 +18,19 @@ int AES_128_CTR_4R_NI(unsigned char *output, size_t outputByteLen,
 #else
 int AES_128_CTR(unsigned char *output, size_t outputByteLen,
                 const unsigned char *input, size_t inputByteLen);
+
+typedef struct {
+    uint32_t ivw[16];
+    uint64_t *sk_exp;
+
+    unsigned char out[64];
+    int left;
+} aes128ctr_ctx;
+
+void AES_128_CTR_init(aes128ctr_ctx *ctx,  const unsigned char *iv, const unsigned char *input);
+void AES_128_CTR_get(aes128ctr_ctx *ctx, unsigned char *out, const int outlen);
+void AES_128_CTR_release(aes128ctr_ctx *ctx);
+
 #endif
 
 #endif

@@ -3,7 +3,62 @@
 #ifndef ARITHMETIC_COMMON_H
 #define ARITHMETIC_COMMON_H
 
+#include "aes_ctr.h"
+#include <arithmetic.h>
+#include <simple_arithmetic.h>
 #include <stdalign.h>
+
+// multiplies m (possibly upper triangular) matrices with the transpose of a single matrix and adds result to acc
+static inline void mul_add_m_upper_triangular_mat_x_mat_trans(int m_legs, const uint64_t *bs_mat, const unsigned char *mat, uint64_t *acc, int bs_mat_rows, int bs_mat_cols, int mat_rows, int triangular) {
+
+    int bs_mat_entries_used = 0;
+    for (int r = 0; r < bs_mat_rows; r++) {
+        for (int c = triangular * r; c < bs_mat_cols; c++) {
+            for (int k = 0; k < mat_rows; k += 1) {
+#if defined(MAYO_VARIANT) && (M_MAX == 64)
+                (void) m_legs;
+                vec_mul_add_64(bs_mat + 4 * bs_mat_entries_used, mat[k * bs_mat_cols + c], acc + 4 * (r * mat_rows + k));
+#elif defined(MAYO_VARIANT) && (M_MAX == 96)
+                (void) m_legs;
+                vec_mul_add_96(bs_mat + 6 * bs_mat_entries_used, mat[k * bs_mat_cols + c], acc + 6 * (r * mat_rows + k));
+#elif defined(MAYO_VARIANT) && (M_MAX == 128)
+                (void) m_legs;
+                vec_mul_add_128(bs_mat + 8 * bs_mat_entries_used, mat[k * bs_mat_cols + c], acc + 8 * (r * mat_rows + k));
+#else
+                m_vec_mul_add(m_legs, bs_mat + m_legs * 2 * bs_mat_entries_used, mat[k * bs_mat_cols + c], acc + m_legs * 2 * (r * mat_rows + k));
+#endif
+            }
+            bs_mat_entries_used += 1;
+        }
+    }
+}
+
+// multiplies m (possibly upper triangular) matrices with the transpose of a single matrix and adds result to acc
+static inline void mul_add_m_upper_triangular_mat_x_mat_trans_expand(int m_legs, aes128ctr_ctx *ctx, const unsigned char *mat, uint64_t *acc, int bs_mat_rows, int bs_mat_cols, int mat_rows, int triangular) {
+    uint64_t bs_mat[M_MAX / 16];
+
+    for (int r = 0; r < bs_mat_rows; r++) {
+        for (int c = triangular * r; c < bs_mat_cols; c++) {
+            AES_128_CTR_get(ctx, (uint8_t*)bs_mat, M_MAX / 2);
+
+            for (int k = 0; k < mat_rows; k += 1) {
+#if defined(MAYO_VARIANT) && (M_MAX == 64)
+                (void) m_legs;
+                vec_mul_add_64(bs_mat, mat[k * bs_mat_cols + c], acc + 4 * (r * mat_rows + k));
+#elif defined(MAYO_VARIANT) && (M_MAX == 96)
+                (void) m_legs;
+                vec_mul_add_96(bs_mat, mat[k * bs_mat_cols + c], acc + 6 * (r * mat_rows + k));
+#elif defined(MAYO_VARIANT) && (M_MAX == 128)
+                (void) m_legs;
+                vec_mul_add_128(bs_mat, mat[k * bs_mat_cols + c], acc + 8 * (r * mat_rows + k));
+#else
+                m_vec_mul_add(m_legs, bs_mat + m_legs * 2 * bs_mat_entries_used, mat[k * bs_mat_cols + c], acc + m_legs * 2 * (r * mat_rows + k));
+#endif
+            }
+        }
+    }
+}
+
 
 #ifndef MAYO_VARIANT
 static void m_multiply_bins(const int m_legs, uint64_t *bins, uint64_t *out) {
@@ -49,19 +104,15 @@ static void m_multiply_bins(const int m_legs, uint64_t *bins, uint64_t *out) {
 }
 #endif
 
+
 // compute P * S^t = [ P1  P2 ] * [S1] = [P1*S1 + P2*S2]
 //                   [  0  P3 ]   [S2]   [        P3*S2]
-static inline void mayo_generic_m_calculate_PS(const uint64_t *P1, const uint64_t *P2, const uint64_t *P3, const unsigned char *S,
+static inline void mayo_generic_m_calculate_PS_expand_on_the_fly(const uint8_t *seed, const uint64_t *P3, const unsigned char *S,
                               const int m, const int v, const int o, const int k, uint64_t *PS) {
 
     const int n = o + v;
-#if defined(MAYO_VARIANT) && ((M_MAX == 64) || (M_MAX == 96) || M_MAX == 128)
-    (void)m;
-#else
-    const int m_legs = m / 32;
-#endif
 
-    /* Old approach which is constant time but doesn't have to be
+    // Old approach which is constant time but doesn't have to be
     unsigned char S1[V_MAX*K_MAX];
     unsigned char S2[O_MAX*K_MAX];
     unsigned char *s1_write = S1;
@@ -78,11 +129,57 @@ static inline void mayo_generic_m_calculate_PS(const uint64_t *P1, const uint64_
         }
     }
 
+    const int m_legs = m / 32;
+
+    aes128ctr_ctx ctx;
+    unsigned char iv[16] = { 0 };
+    AES_128_CTR_init(&ctx, iv, seed);
+
+    mul_add_m_upper_triangular_mat_x_mat_trans_expand(m_legs, &ctx, S1, PS, v, v, k, 1); // P1 * S1
+    mul_add_m_upper_triangular_mat_x_mat_trans_expand(m_legs, &ctx, S2, PS, v, o, k, 0); // P2 * S2
+    mul_add_m_upper_triangular_mat_x_mat_trans(m_legs, P3, S2, PS + v*k*m_legs*2, o, o, k, 1); // P3 * S2.
+
+    AES_128_CTR_release(&ctx);
+
+    return;
+}
+
+// compute P * S^t = [ P1  P2 ] * [S1] = [P1*S1 + P2*S2]
+//                   [  0  P3 ]   [S2]   [        P3*S2]
+static inline void mayo_generic_m_calculate_PS(const uint64_t *P1, const uint64_t *P2, const uint64_t *P3, const unsigned char *S,
+                              const int m, const int v, const int o, const int k, uint64_t *PS) {
+
+    const int n = o + v;
+#if defined(MAYO_VARIANT) && ((M_MAX == 64) || (M_MAX == 96) || M_MAX == 128)
+    (void)m;
+#else
+    const int m_legs = m / 32;
+#endif
+
+    // Old approach which is constant time but doesn't have to be
+    unsigned char S1[V_MAX*K_MAX];
+    unsigned char S2[O_MAX*K_MAX];
+    unsigned char *s1_write = S1;
+    unsigned char *s2_write = S2;
+    for (int r=0; r < k; r++)
+    {
+        for (int c = 0; c < n; c++)
+        {
+            if(c < v){
+                *(s1_write++) = S[r*n + c];
+            } else {
+                *(s2_write++) = S[r*n + c];
+            }
+        }
+    }
+
+    const int m_legs = m / 32;
+
     mul_add_m_upper_triangular_mat_x_mat_trans(m_legs, P1, S1, PS, v, v, k, 1); // P1 * S1
     mul_add_m_upper_triangular_mat_x_mat_trans(m_legs, P2, S2, PS, v, o, k, 0); // P2 * S2
-    mul_add_m_upper_triangular_mat_x_mat_trans(m_legs, P3, S2, PS + v*k*m_legs*4, o, o, k, 1); // P3 * S2.
-    */
+    mul_add_m_upper_triangular_mat_x_mat_trans(m_legs, P3, S2, PS + v*k*m_legs*2, o, o, k, 1); // P3 * S2.
 
+return;
     // use more stack efficient version for MAYO_3 and MAYO_5
     #if (defined(HAVE_STACKEFFICIENT) || defined(PQM4)) && N_MAX > 78
     uint64_t accumulator[M_MAX * N_MAX] = {0};
@@ -388,31 +485,6 @@ static inline void mul_add_m_upper_triangular_mat_x_mat(int m_legs, const uint64
                 vec_mul_add_128(bs_mat + 8 * bs_mat_entries_used, mat[c * mat_cols + k], acc + 8 * (r * mat_cols + k));
 #else
                 m_vec_mul_add(m_legs, bs_mat + m_legs * 2 * bs_mat_entries_used, mat[c * mat_cols + k], acc + m_legs * 2 * (r * mat_cols + k));
-#endif
-            }
-            bs_mat_entries_used += 1;
-        }
-    }
-}
-
-// multiplies m (possibly upper triangular) matrices with the transpose of a single matrix and adds result to acc
-static inline void mul_add_m_upper_triangular_mat_x_mat_trans(int m_legs, const uint64_t *bs_mat, const unsigned char *mat, uint64_t *acc, int bs_mat_rows, int bs_mat_cols, int mat_rows, int triangular) {
-
-    int bs_mat_entries_used = 0;
-    for (int r = 0; r < bs_mat_rows; r++) {
-        for (int c = triangular * r; c < bs_mat_cols; c++) {
-            for (int k = 0; k < mat_rows; k += 1) {
-#if defined(MAYO_VARIANT) && (M_MAX == 64)
-                (void) m_legs;
-                vec_mul_add_64(bs_mat + 4 * bs_mat_entries_used, mat[k * bs_mat_cols + c], acc + 4 * (r * mat_rows + k));
-#elif defined(MAYO_VARIANT) && (M_MAX == 96)
-                (void) m_legs;
-                vec_mul_add_96(bs_mat + 6 * bs_mat_entries_used, mat[k * bs_mat_cols + c], acc + 6 * (r * mat_rows + k));
-#elif defined(MAYO_VARIANT) && (M_MAX == 128)
-                (void) m_legs;
-                vec_mul_add_128(bs_mat + 8 * bs_mat_entries_used, mat[k * bs_mat_cols + c], acc + 8 * (r * mat_rows + k));
-#else
-                m_vec_mul_add(m_legs, bs_mat + m_legs * 2 * bs_mat_entries_used, mat[k * bs_mat_cols + c], acc + m_legs * 2 * (r * mat_rows + k));
 #endif
             }
             bs_mat_entries_used += 1;

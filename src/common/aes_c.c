@@ -33,6 +33,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "aes_ctr.h"
+
 #define AES128_KEYBYTES 16
 #define AES192_KEYBYTES 24
 #define AES256_KEYBYTES 32
@@ -717,6 +719,56 @@ void aes192_ctx_release(aes192ctx *r) {
 
 void aes256_ctx_release(aes256ctx *r) {
     free(r->sk_exp);
+}
+
+void AES_128_CTR_init(aes128ctr_ctx *ctx,  const unsigned char *iv, const unsigned char *input) {
+    ctx->left = 0;
+
+    aes128ctx _ctx;
+    aes128_ctr_keyexp(&_ctx, input); // Note: includes malloc
+    ctx->sk_exp = _ctx.sk_exp;
+
+    uint32_t cc = 0;
+
+    uint32_t *ivw = ctx->ivw;
+    br_range_dec32le(ivw, 3, iv);
+    memcpy(ivw +  4, ivw, 3 * sizeof(uint32_t));
+    memcpy(ivw +  8, ivw, 3 * sizeof(uint32_t));
+    memcpy(ivw + 12, ivw, 3 * sizeof(uint32_t));
+    ivw[ 3] = br_swap32(cc);
+    ivw[ 7] = br_swap32(cc + 1);
+    ivw[11] = br_swap32(cc + 2);
+    ivw[15] = br_swap32(cc + 3);
+}
+
+void AES_128_CTR_get(aes128ctr_ctx *ctx, unsigned char *out, int outlen) {
+    if (ctx->left != 0) {
+        int min = ctx->left;
+        if (outlen < ctx->left) min = outlen;
+        for (int i = 0; i < min; i++) {
+            *out++ = ctx->out[64 - ctx->left + i];
+        }
+        ctx->left -= min;
+        outlen -= min;
+    }
+
+    while (outlen >= 64) {
+        aes_ctr4x(out, ctx->ivw, ctx->sk_exp, 10);
+        out += 64;
+        outlen -= 64;
+    }
+
+    if (outlen > 0) {
+        aes_ctr4x(ctx->out, ctx->ivw, ctx->sk_exp, 10);
+        for (int i = 0; i < outlen; i++) {
+            out[i] = ctx->out[i];
+        }
+        ctx->left = 64 - outlen;
+    }
+}
+
+void AES_128_CTR_release(aes128ctr_ctx *ctx) {
+    free(ctx->sk_exp);
 }
 
 int AES_128_CTR(unsigned char *output, size_t outputByteLen,

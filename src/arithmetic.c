@@ -33,10 +33,10 @@ void P1P1t_times_O(const mayo_params_t* p, const uint64_t* P1, const unsigned ch
     (void) p;
     mayo_12_P1P1t_times_O(P1, O, acc);
 #elif MAYO_AVX && defined(MAYO_VARIANT) && M_MAX == 96
-    (void) p;   
+    (void) p;
     mayo_3_P1P1t_times_O(P1, O, acc);
 #elif MAYO_AVX && defined(MAYO_VARIANT) && M_MAX == 128
-    (void) p;   
+    (void) p;
     mayo_5_P1P1t_times_O(P1, O, acc);
 #else
     #ifndef MAYO_VARIANT
@@ -47,7 +47,7 @@ void P1P1t_times_O(const mayo_params_t* p, const uint64_t* P1, const unsigned ch
     const int param_o = PARAM_o(p);
     const int param_v = PARAM_n(p) - PARAM_o(p);;
 
-    int 
+    int
     bs_mat_entries_used = 0;
     for (int r = 0; r < param_v; r++) {
         for (int c = r; c < param_v; c++) {
@@ -56,7 +56,7 @@ void P1P1t_times_O(const mayo_params_t* p, const uint64_t* P1, const unsigned ch
                 continue;
             }
             for (int k = 0; k < param_o; k += 1) {
-                
+
 #if defined(MAYO_VARIANT) && (M_MAX == 64)
                 vec_mul_add_64(P1 + 4 * bs_mat_entries_used, O[c * param_o + k], acc + 4 * (r * param_o + k));
                 vec_mul_add_64( P1 + 4 * bs_mat_entries_used, O[r * param_o + k],  acc + 4 * (c * param_o + k));
@@ -185,7 +185,7 @@ void m_calculate_PS_SPS(const uint64_t *P1, const uint64_t *P2, const uint64_t *
     alignas (32) uint64_t PS[N_MAX * K_MAX * M_MAX / 16] = { 0 };
 
 #if M_MAX == 64
-    __m256i S1_multabs[(K_MAX+1)/2*V_MAX];    
+    __m256i S1_multabs[(K_MAX+1)/2*V_MAX];
     __m256i S2_multabs[(K_MAX+1)/2*O_MAX];
     mayo_S1_multabs_avx2(S1, S1_multabs);
     mayo_S2_multabs_avx2(S2, S2_multabs);
@@ -197,7 +197,7 @@ void m_calculate_PS_SPS(const uint64_t *P1, const uint64_t *P2, const uint64_t *
     mayo_12_S1t_times_PS1_avx2(PS, S1_multabs, SPS);
     mayo_12_S2t_times_PS2_avx2(PS + V_MAX*K_MAX*M_MAX/16, S2_multabs, SPS);
 #elif M_MAX == 96
-    __m256i S1_multabs[(K_MAX+1)/2*V_MAX];    
+    __m256i S1_multabs[(K_MAX+1)/2*V_MAX];
     __m256i S2_multabs[(K_MAX+1)/2*O_MAX];
 
     mayo_S1_multabs_avx2(S1, S1_multabs);
@@ -210,7 +210,7 @@ void m_calculate_PS_SPS(const uint64_t *P1, const uint64_t *P2, const uint64_t *
     mayo_3_S1t_times_PS1_avx2(PS, S1_multabs, SPS);
     mayo_3_S2t_times_PS2_avx2(PS + V_MAX*K_MAX*M_MAX/16, S2_multabs, SPS);
 #elif M_MAX == 128
-    __m256i S1_multabs[(K_MAX+1)/2*V_MAX];    
+    __m256i S1_multabs[(K_MAX+1)/2*V_MAX];
     __m256i S2_multabs[(K_MAX+1)/2*O_MAX];
     mayo_S1_multabs_avx2(S1, S1_multabs);
     mayo_S2_multabs_avx2(S2, S2_multabs);
@@ -221,7 +221,7 @@ void m_calculate_PS_SPS(const uint64_t *P1, const uint64_t *P2, const uint64_t *
     //m_calculate_SPS(PS, S, M_MAX, K_MAX, N_MAX, SPS);
     mayo_5_S1t_times_PS1_avx2(PS, S1_multabs, SPS);
     mayo_5_S2t_times_PS2_avx2(PS + V_MAX*K_MAX*M_MAX/16, S2_multabs, SPS);
-#else 
+#else
     NOT IMPLEMENTED
 #endif
 #else
@@ -232,6 +232,17 @@ void m_calculate_PS_SPS(const uint64_t *P1, const uint64_t *P2, const uint64_t *
 #endif
 }
 
+// compute P * S^t = [ P1  P2 ] * [S1] = [P1*S1 + P2*S2]
+//                   [  0  P3 ]   [S2]   [        P3*S2]
+// compute S * PS  = [ S1 S2 ] * [ P1*S1 + P2*S2 = P1 ] = [ S1*P1 + S2*P2 ]
+//                               [         P3*S2 = P2 ]
+void m_calculate_PS_SPS_expand_on_the_fly(const uint8_t* seed, const uint64_t *P3, const unsigned char *S,
+                              const int m, const int v, const int o, const int k, uint64_t *SPS) {
+    const int n = o + v;
+    alignas (32) uint64_t PS[N_MAX * K_MAX * M_MAX / 16] = { 0 };
+    mayo_generic_m_calculate_PS_expand_on_the_fly(seed, P3, S, m, v, o, k, PS);
+    mayo_generic_m_calculate_SPS(PS, S, m, k, n, SPS);
+}
 
 // sample a solution x to Ax = y, with r used as randomness
 // require:
@@ -334,7 +345,7 @@ void finish_signature(const mayo_params_t* p, const unsigned char* O, const unsi
     const int legs = (param_n-param_o+31)/32;
     uint64_t product[N_MAX/32*2*K_MAX] = {0};
     uint64_t O_col[N_MAX/32*2];
-    
+
     // matrix mul
     for (int i = 0; i < param_o; i++)
     {
@@ -362,8 +373,8 @@ void finish_signature(const mayo_params_t* p, const unsigned char* O, const unsi
             m_vec_mul_add(legs, O_col, x[j*param_o+i], product + j*2*legs);
 #endif
         }
-    }    
-    
+    }
+
     // write product to s
     for (int i = 0; i < param_k; i++)
     {
