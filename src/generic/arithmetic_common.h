@@ -492,6 +492,32 @@ static inline void mul_add_m_upper_triangular_mat_x_mat(int m_legs, const uint64
     }
 }
 
+// multiplies m (possibly upper triangular) matrices with a single matrix and adds result to acc
+static inline void mul_add_m_upper_triangular_mat_x_mat_expand(int m_legs, aes128ctr_ctx *ctx, const unsigned char *mat, uint64_t *acc, int bs_mat_rows, int bs_mat_cols, int mat_cols, int triangular) {
+    uint64_t bs_mat[M_MAX / 16];
+
+    for (int r = 0; r < bs_mat_rows; r++) {
+        for (int c = triangular * r; c < bs_mat_cols; c++) {
+            AES_128_CTR_get(ctx, (uint8_t*)bs_mat, M_MAX / 2);
+
+            for (int k = 0; k < mat_cols; k += 1) {
+#if defined(MAYO_VARIANT) && (M_MAX == 64)
+                (void) m_legs;
+                vec_mul_add_64(bs_mat, mat[c * mat_cols + k], acc + 4 * (r * mat_cols + k));
+#elif defined(MAYO_VARIANT) && (M_MAX == 96)
+                (void) m_legs;
+                vec_mul_add_96(bs_mat, mat[c * mat_cols + k], acc + 6 * (r * mat_cols + k));
+#elif defined(MAYO_VARIANT) && (M_MAX == 128)
+                (void) m_legs;
+                vec_mul_add_128(bs_mat, mat[c * mat_cols + k], acc + 8 * (r * mat_cols + k));
+#else
+                m_vec_mul_add(m_legs, bs_mat + m_legs * 2 * bs_mat_entries_used, mat[c * mat_cols + k], acc + m_legs * 2 * (r * mat_cols + k));
+#endif
+            }
+        }
+    }
+}
+
 // multiplies the transpose of a single matrix with m matrices and adds result to acc
 static inline void mul_add_mat_trans_x_m_mat(int m_legs, const unsigned char *mat, const uint64_t *bs_mat, uint64_t *acc, int mat_rows, int mat_cols, int bs_mat_cols) {
 

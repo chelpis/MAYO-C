@@ -29,6 +29,7 @@ typedef struct {
 
 void AES_128_CTR_init(aes128ctr_ctx *ctx,  const unsigned char *iv, const unsigned char *input);
 void AES_128_CTR_get(aes128ctr_ctx *ctx, unsigned char *out, const int outlen);
+void AES_128_CTR_set_position(aes128ctr_ctx *ctx, const unsigned char *iv, const int pos);
 void AES_128_CTR_release(aes128ctr_ctx *ctx);
 
 #endif

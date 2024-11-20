@@ -767,6 +767,36 @@ void AES_128_CTR_get(aes128ctr_ctx *ctx, unsigned char *out, int outlen) {
     }
 }
 
+void AES_128_CTR_set_position(aes128ctr_ctx *ctx, const unsigned char *iv, int pos) {
+    ctx->left = 0;
+
+    uint32_t cc = 0;
+
+    uint32_t *ivw = ctx->ivw;
+    br_range_dec32le(ivw, 3, iv);
+    memcpy(ivw +  4, ivw, 3 * sizeof(uint32_t));
+    memcpy(ivw +  8, ivw, 3 * sizeof(uint32_t));
+    memcpy(ivw + 12, ivw, 3 * sizeof(uint32_t));
+    ivw[ 3] = br_swap32(cc);
+    ivw[ 7] = br_swap32(cc + 1);
+    ivw[11] = br_swap32(cc + 2);
+    ivw[15] = br_swap32(cc + 3);
+
+    while (pos >= 64) {
+        /* Increase counter for next 4 blocks */
+        inc4_be(ivw + 3);
+        inc4_be(ivw + 7);
+        inc4_be(ivw + 11);
+        inc4_be(ivw + 15);
+        pos -= 64;
+    }
+
+    if (pos > 0) {
+        aes_ctr4x(ctx->out, ctx->ivw, ctx->sk_exp, 10);
+        ctx->left = 64 - pos;
+    }
+}
+
 void AES_128_CTR_release(aes128ctr_ctx *ctx) {
     free(ctx->sk_exp);
 }

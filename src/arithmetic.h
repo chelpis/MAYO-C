@@ -39,6 +39,12 @@
 #define Ot_times_P1O_P2 MAYO_NAMESPACE(Ot_times_P1O_P2)
 void Ot_times_P1O_P2(const mayo_params_t* p, const uint64_t* P1, const unsigned char* O, uint64_t* P1O_P2, uint64_t* P3);
 
+
+// Calculate P3 = O^T * (P1*O + P2) in KeyGen
+#define Ot_times_P1O_P2_expand_on_the_fly MAYO_NAMESPACE(Ot_times_P1O_P2_expand_on_the_fly)
+void Ot_times_P1O_P2_expand_on_the_fly(const mayo_params_t* p, const uint8_t* seed, const unsigned char* O, uint64_t* P1O_P2, uint64_t* P3);
+
+
 // Calculate Upper in KeyGen
 #define m_upper MAYO_NAMESPACE(m_upper)
 void m_upper(int m_legs, const uint64_t *in, uint64_t *out, int size);

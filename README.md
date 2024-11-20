@@ -1,9 +1,10 @@
 # MAYO-C
 
-## This low stack impl is for ref only.
+## This low stack impl is PoC only.
 - Only works for MAYO_1/2/3/5
 - Doesn't work for every config combinations.
 - Doesn't consider big endian platforms, etc.
+- Doesn't pass CI tests.
 
 ![MAYO-C workflow](https://github.com/PQCMayo/MAYO-C/actions/workflows/cmake.yml/badge.svg)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)

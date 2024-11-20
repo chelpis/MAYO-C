@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#include "aes_ctr.h"
 #include <arithmetic.h>
 #include <simple_arithmetic.h>
 #include <arithmetic_common.h>
@@ -151,6 +152,32 @@ void Ot_times_P1O_P2(const mayo_params_t* p, const uint64_t* P1, const unsigned 
     mul_add_m_upper_triangular_mat_x_mat(param_m/32, P1, O, P1O_P2, param_n - param_o, param_n - param_o, param_o, 1);
     mul_add_mat_trans_x_m_mat(m_legs, O, P1O_P2, P3, param_v, param_o, param_o);
 #endif
+}
+
+
+void Ot_times_P1O_P2_expand_on_the_fly(const mayo_params_t* p, const uint8_t* seed, const unsigned char* O, uint64_t* P1O_P2, uint64_t* P3) {
+    const int param_v = PARAM_v(p);
+    const int param_o = PARAM_o(p);
+    const int param_m = PARAM_m(p);
+    const int param_n = PARAM_n(p);
+    const int m_legs = PARAM_m(p) / 32;
+
+    // P1O_P2 <- P2, while skipping P1
+    aes128ctr_ctx ctx;
+    unsigned char iv[16] = { 0 };
+    AES_128_CTR_init(&ctx, iv, seed);
+
+    AES_128_CTR_set_position(&ctx, iv, PARAM_P1_bytes(p));
+    AES_128_CTR_get(&ctx, (uint8_t*)P1O_P2, PARAM_P2_bytes(p));
+
+    // Regenerate P1 on-the-fly
+    AES_128_CTR_set_position(&ctx, iv, 0);
+
+    mul_add_m_upper_triangular_mat_x_mat_expand(param_m/32, &ctx, O, P1O_P2, param_n - param_o, param_n - param_o, param_o, 1);
+
+    AES_128_CTR_release(&ctx);
+
+    mul_add_mat_trans_x_m_mat(m_legs, O, P1O_P2, P3, param_v, param_o, param_o);
 }
 
 

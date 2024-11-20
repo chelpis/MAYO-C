@@ -429,7 +429,7 @@ int mayo_keypair_compact(const mayo_params_t *p, unsigned char *cpk,
     int ret = MAYO_OK;
     unsigned char *seed_sk = csk;
     unsigned char S[PK_SEED_BYTES_MAX + O_BYTES_MAX];
-    alignas (32) uint64_t P[(P1_BYTES_MAX + P2_BYTES_MAX) / 8];
+    alignas (32) uint64_t P2[(P2_BYTES_MAX) / 8];
     alignas (32) uint64_t P3[O_MAX * O_MAX * M_MAX / 16] = {0};
 
     unsigned char *seed_pk;
@@ -439,8 +439,6 @@ int mayo_keypair_compact(const mayo_params_t *p, unsigned char *cpk,
     const int param_v = PARAM_v(p);
     const int param_o = PARAM_o(p);
     const int param_O_bytes = PARAM_O_bytes(p);
-    const int param_P1_bytes = PARAM_P1_bytes(p);
-    const int param_P2_bytes = PARAM_P2_bytes(p);
     const int param_P3_bytes = PARAM_P3_bytes(p);
     const int param_pk_seed_bytes = PARAM_pk_seed_bytes(p);
     const int param_sk_seed_bytes = PARAM_sk_seed_bytes(p);
@@ -468,18 +466,12 @@ int mayo_keypair_compact(const mayo_params_t *p, unsigned char *cpk,
     VALGRIND_MAKE_MEM_DEFINED(seed_pk, param_pk_seed_bytes);
 #endif
 
-    // encode decode not necessary, since P1, P2, and P3 are sampled and stored in correct format
-    PK_PRF((unsigned char *)P, param_P1_bytes + param_P2_bytes, seed_pk,
-           param_pk_seed_bytes);
-
-
     int m_legs = param_m / 32;
 
-    uint64_t *P1 = P;
-    uint64_t *P1O_P2 = P + (param_P1_bytes / 8);
+    uint64_t *P1O_P2 = P2;
 
     // compute P3 = O^t * (P1*O + P2)
-    Ot_times_P1O_P2(p, P1, O, P1O_P2, P3);
+    Ot_times_P1O_P2_expand_on_the_fly(p, seed_pk, O, P1O_P2, P3);
 
     // store seed_pk in cpk
     memcpy(cpk, seed_pk, param_pk_seed_bytes);
@@ -490,6 +482,7 @@ int mayo_keypair_compact(const mayo_params_t *p, unsigned char *cpk,
     m_upper(m_legs, P3, P3_upper, param_o);
 
     memcpy(cpk + param_pk_seed_bytes, P3_upper, param_P3_bytes);
+
 
 
 #if !defined(PQM4) && !defined(HAVE_RANDOMBYTES_NORETVAL)
