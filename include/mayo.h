@@ -285,8 +285,10 @@ typedef struct {
     const char *name;
 } mayo_params_t;
 
+// Note: for on-the-fly P1 generation, the struct contains different intermediate entries
 typedef struct sk_t {
-    uint64_t p[P1_BYTES_MAX/8 + P2_BYTES_MAX/8];
+    uint8_t seed_pk[PK_SEED_BYTES_MAX];
+    uint64_t l[P2_BYTES_MAX/8];
     uint8_t o[O_BYTES_MAX];
 } sk_t;
 
@@ -370,7 +372,7 @@ int mayo_open(const mayo_params_t *p, unsigned char *m,
  *
  * The implementation corresponds to Mayo.CompactKeyGen() in the Mayo spec.
  * The caller is responsible to allocate sufficient memory to hold pk and sk.
- * 
+ *
  * outputs a pair (csk, cpk) \in B^{csk_bytes} x B^{cpk_bytes}, where csk and
  * cpk are compact representations of a Mayo secret key and public key
  *

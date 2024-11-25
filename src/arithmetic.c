@@ -29,7 +29,7 @@ void m_upper(int m_legs, const uint64_t *in, uint64_t *out, int size) {
 #endif
 }
 
-void P1P1t_times_O(const mayo_params_t* p, const uint64_t* P1, const unsigned char* O, uint64_t* acc){
+void P1P1t_times_O_expand_P1(const mayo_params_t* p, aes128ctr_ctx* ctx, const unsigned char* O, uint64_t* acc){
 #if MAYO_AVX && defined(MAYO_VARIANT) && M_MAX == 64
     (void) p;
     mayo_12_P1P1t_times_O(P1, O, acc);
@@ -48,38 +48,36 @@ void P1P1t_times_O(const mayo_params_t* p, const uint64_t* P1, const unsigned ch
     const int param_o = PARAM_o(p);
     const int param_v = PARAM_n(p) - PARAM_o(p);;
 
-    int
-    bs_mat_entries_used = 0;
+    uint64_t bs_mat[M_MAX / 16];
+
     for (int r = 0; r < param_v; r++) {
         for (int c = r; c < param_v; c++) {
-            if(c==r) {
-                bs_mat_entries_used += 1;
-                continue;
-            }
+            AES_128_CTR_get(ctx, (uint8_t*)bs_mat, M_MAX / 2);
+
+            if(c==r) continue;
             for (int k = 0; k < param_o; k += 1) {
 
 #if defined(MAYO_VARIANT) && (M_MAX == 64)
-                vec_mul_add_64(P1 + 4 * bs_mat_entries_used, O[c * param_o + k], acc + 4 * (r * param_o + k));
-                vec_mul_add_64( P1 + 4 * bs_mat_entries_used, O[r * param_o + k],  acc + 4 * (c * param_o + k));
+                vec_mul_add_64(bs_mat, O[c * param_o + k], acc + 4 * (r * param_o + k));
+                vec_mul_add_64(bs_mat, O[r * param_o + k],  acc + 4 * (c * param_o + k));
 #elif defined(MAYO_VARIANT) && (M_MAX == 96)
-                vec_mul_add_96( P1 + 6 * bs_mat_entries_used, O[c * param_o + k],  acc + 6 * (r * param_o + k));
-                vec_mul_add_96( P1 + 6 * bs_mat_entries_used, O[r * param_o + k],  acc + 6 * (c * param_o + k));
+                vec_mul_add_96(bs_mat, O[c * param_o + k],  acc + 6 * (r * param_o + k));
+                vec_mul_add_96(bs_mat, O[r * param_o + k],  acc + 6 * (c * param_o + k));
 #elif defined(MAYO_VARIANT) && (M_MAX == 128)
-                vec_mul_add_128( P1 + 8 * bs_mat_entries_used, O[c * param_o + k],  acc + 8 * (r * param_o + k));
-                vec_mul_add_128( P1 + 8 * bs_mat_entries_used, O[r * param_o + k],  acc + 8 * (c * param_o + k));
+                vec_mul_add_128(bs_mat, O[c * param_o + k],  acc + 8 * (r * param_o + k));
+                vec_mul_add_128(bs_mat, O[r * param_o + k],  acc + 8 * (c * param_o + k));
 #else
                 m_vec_mul_add(m_legs, P1 + m_legs * 2 * bs_mat_entries_used, O[c * param_o + k], acc + m_legs * 2 * (r * param_o + k));
                 m_vec_mul_add(m_legs, P1 + m_legs * 2 * bs_mat_entries_used, O[r * param_o + k], acc + m_legs * 2 * (c * param_o + k));
 #endif
 
             }
-            bs_mat_entries_used += 1;
         }
     }
 #endif
 }
 
-void V_times_L__V_times_P1_times_Vt(const mayo_params_t* p, const uint64_t* L, const unsigned char* V, uint64_t* M, const uint64_t* P1, uint64_t* Y) {
+void V_times_L__V_times_P1_times_Vt_expand_P1(const mayo_params_t* p, const uint64_t* L, const unsigned char* V, uint64_t* M, const uint8_t* seed, uint64_t* Y) {
     (void) p;
 #if MAYO_AVX && defined(MAYO_VARIANT) && M_MAX == 64
     __m256i V_multabs[(K_MAX+1)/2*V_MAX];
@@ -115,7 +113,14 @@ void V_times_L__V_times_P1_times_Vt(const mayo_params_t* p, const uint64_t* L, c
     mul_add_mat_x_m_mat(param_m / 32, V, L, M,
         param_k, param_n - param_o, param_o);
 
-    mul_add_m_upper_triangular_mat_x_mat_trans(param_m / 32, P1, V, Pv, param_n - param_o, param_n - param_o, param_k, 1);
+    // mul_add_m_upper_triangular_mat_x_mat_trans(param_m / 32, P1, V, Pv, param_n - param_o, param_n - param_o, param_k, 1);
+
+    aes128ctr_ctx ctx;
+    unsigned char iv[16] = { 0 };
+    AES_128_CTR_init(&ctx, iv, seed);
+    mul_add_m_upper_triangular_mat_x_mat_trans_expand(param_m / 32, &ctx, V, Pv, param_n - param_o, param_n - param_o, param_k, 1);
+    AES_128_CTR_release(&ctx);
+
 
     mul_add_mat_x_m_mat(param_m / 32, V, Pv,
         Y, param_k, param_n - param_o,

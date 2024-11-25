@@ -4,6 +4,7 @@
 #ifndef ARITHMETIC_H
 #define ARITHMETIC_H
 
+#include "aes_ctr.h"
 #include <stdint.h>
 #include <mayo.h>
 #include <stdint.h>
@@ -50,12 +51,12 @@ void Ot_times_P1O_P2_expand_on_the_fly(const mayo_params_t* p, const uint8_t* se
 void m_upper(int m_legs, const uint64_t *in, uint64_t *out, int size);
 
 // Calculate acc = (P1+P1^T)*O in expand_sk
-#define P1P1t_times_O MAYO_NAMESPACE(P1P1t_times_O)
-void P1P1t_times_O(const mayo_params_t* p, const uint64_t* P1P1t, const unsigned char* O, uint64_t* acc);
+#define P1P1t_times_O_expand_P1 MAYO_NAMESPACE(P1P1t_times_O_expand_P1)
+void P1P1t_times_O_expand_P1(const mayo_params_t* p, aes128ctr_ctx* ctx, const unsigned char* O, uint64_t* acc);
 
 // Calculate M=V*L and Y=V*P1*V^T in Sign
-#define V_times_L__V_times_P1_times_Vt MAYO_NAMESPACE(V_times_L__V_times_P1_times_Vt)
-void V_times_L__V_times_P1_times_Vt(const mayo_params_t* p, const uint64_t* L, const unsigned char* V, uint64_t* M, const uint64_t* P1, uint64_t* Y);
+#define V_times_L__V_times_P1_times_Vt_expand_P1 MAYO_NAMESPACE(V_times_L__V_times_P1_times_Vt_expand_P1)
+void V_times_L__V_times_P1_times_Vt_expand_P1(const mayo_params_t* p, const uint64_t* L, const unsigned char* V, uint64_t* M, const uint8_t* seed, uint64_t* Y);
 
 // Sample solution in Sign
 #define sample_solution MAYO_NAMESPACE(sample_solution)

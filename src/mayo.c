@@ -280,7 +280,6 @@ int mayo_sign_signature(const mayo_params_t *p, unsigned char *sig,
     const int param_m_bytes = PARAM_m_bytes(p);
     const int param_v_bytes = PARAM_v_bytes(p);
     const int param_r_bytes = PARAM_r_bytes(p);
-    const int param_P1_bytes = PARAM_P1_bytes(p);
 #ifdef TARGET_BIG_ENDIAN
     const int param_P2_bytes = PARAM_P2_bytes(p);
 #endif
@@ -301,8 +300,6 @@ int mayo_sign_signature(const mayo_params_t *p, unsigned char *sig,
     // hash message
     shake256(tmp, param_digest_bytes, m, mlen);
 
-    uint64_t *P1 = sk.p;
-    uint64_t *L  = P1 + (param_P1_bytes/8);
     alignas (32) uint64_t Mtmp[K_MAX * O_MAX * M_MAX / 16] = {0};
 
 #ifdef TARGET_BIG_ENDIAN
@@ -357,7 +354,7 @@ int mayo_sign_signature(const mayo_params_t *p, unsigned char *sig,
         // compute all the V * L matrices.
         // compute all the V * P1 * V^T matrices.
         alignas (32) uint64_t Y[K_MAX * K_MAX * M_MAX / 16] = {0};
-        V_times_L__V_times_P1_times_Vt(p, L, Vdec, Mtmp, P1, Y);
+        V_times_L__V_times_P1_times_Vt_expand_P1(p, sk.l, Vdec, Mtmp, sk.seed_pk, Y);
 
         compute_rhs(p, Y, t, y);
         compute_A(p, Mtmp, A);
@@ -512,34 +509,26 @@ int mayo_expand_sk(const mayo_params_t *p, const unsigned char *csk,
                    sk_t *sk) {
     int ret = MAYO_OK;
     unsigned char S[PK_SEED_BYTES_MAX + O_BYTES_MAX];
-    uint64_t *P = sk->p;
     unsigned char O[(N_MINUS_O_MAX)*O_MAX];
 
     const int param_o = PARAM_o(p);
     const int param_v = PARAM_v(p);
     const int param_O_bytes = PARAM_O_bytes(p);
-    const int param_P1_bytes = PARAM_P1_bytes(p);
-    const int param_P2_bytes = PARAM_P2_bytes(p);
     const int param_pk_seed_bytes = PARAM_pk_seed_bytes(p);
     const int param_sk_seed_bytes = PARAM_sk_seed_bytes(p);
 
     const unsigned char *seed_sk = csk;
-    unsigned char *seed_pk = S;
 
     shake256(S, param_pk_seed_bytes + param_O_bytes, seed_sk,
              param_sk_seed_bytes);
     decode(S + param_pk_seed_bytes, O,
            param_v * param_o); // O = S + PK_SEED_BYTES;
 
+    memcpy(sk->seed_pk, S, param_pk_seed_bytes);
+
 #ifdef ENABLE_CT_TESTING
     VALGRIND_MAKE_MEM_DEFINED(seed_pk, param_pk_seed_bytes);
 #endif
-
-    // encode decode not necessary, since P1,P2 and P3 are sampled and stored in correct format
-    PK_PRF((unsigned char *)P, param_P1_bytes + param_P2_bytes, seed_pk,
-           param_pk_seed_bytes);
-
-    uint64_t *P2 = P + (param_P1_bytes / 8);
 
 #ifdef TARGET_BIG_ENDIAN
     for (int i = 0; i < (param_P1_bytes + param_P2_bytes) / 8; ++i) {
@@ -547,10 +536,23 @@ int mayo_expand_sk(const mayo_params_t *p, const unsigned char *csk,
     }
 #endif
 
-    uint64_t *P1 = P;
+
+    aes128ctr_ctx ctx;
+    unsigned char iv[16] = { 0 };
+    AES_128_CTR_init(&ctx, iv, sk->seed_pk);
+
+    // get P2
+    AES_128_CTR_set_position(&ctx, iv, PARAM_P1_bytes(p));
+    AES_128_CTR_get(&ctx, (uint8_t*)sk->l, PARAM_P2_bytes(p));
+
+    // get P1
+    AES_128_CTR_set_position(&ctx, iv, 0);
+
     // compute L_i = (P1 + P1^t)*O + P2
-    uint64_t *L = P2;
-    P1P1t_times_O(p, P1, O, L);
+    P1P1t_times_O_expand_P1(p, &ctx, O, sk->l);
+
+    AES_128_CTR_release(&ctx);
+
 
     // write to sk
     memcpy(sk->o, S + param_pk_seed_bytes, param_O_bytes);
